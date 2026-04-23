@@ -1,0 +1,327 @@
+# Hermes Decision Engine Configuration
+# ⚠️ MODE: DATA COLLECTION ONLY — Auto routing DISABLED (2026-04-23)
+# 
+# This file now serves as a passive data collection and monitoring tool.
+# Auto routing has been disabled by user decision.
+# The system no longer automatically selects models based on budget or complexity.
+# 
+# How it works NOW:
+# 1. metrics_api.py still queries central_metrics.db for cost tracking
+# 2. update_budget_status.py still runs hourly to update budget_status.md
+# 3. DecisionRouter and ComplexityScorer are DISABLED — they log decisions but take no actions
+# 4. Human (user) makes all routing decisions manually
+#
+# To RE-ENABLE auto routing: set routing.enabled: true and remove this header block
+
+# ─────────────────────────────────────────────────────────────────
+# ROUTING CONTROL (DISABLED)
+# ─────────────────────────────────────────────────────────────────
+routing:
+  enabled: false                    # ⚠️ DISABLED — human controls all routing
+  log_only: true                   # Still log routing decisions (no action)
+
+# ─────────────────────────────────────────────────────────────────
+# COST THRESHOLDS (USD per day)
+# Kept for data display only — no auto-enforcement
+# ─────────────────────────────────────────────────────────────────
+cost_budget:
+  daily_limit: 10.00               # No longer enforced (human decides)
+  warning_threshold: 8.00          # Display only
+  critical_threshold: 9.00         # Display only (was $2, too tight)
+
+# ─────────────────────────────────────────────────────────────────
+# TIME-OF-DAY ROUTING (Asia/Hong_Kong timezone)
+# ─────────────────────────────────────────────────────────────────
+time_of_day:
+  timezone: "Asia/Hong_Kong"
+
+  # Peak hours: MiniMax may have congestion — use fallback for simple tasks
+  peak_hours:
+    start: 14   # 14:00 HKT
+    end: 18     # 18:00 HKT
+
+  # Time-block model overrides (applied AFTER budget check, BEFORE complexity mapping)
+  # Format: {hour_start}-{hour_end}: model_key for simple tasks (complexity < 5)
+  simple_task_overrides:
+    # 00:00-14:00: no override (use normal mapping)
+    # 14:00-18:00: avoid MiniMax for simple tasks
+    "14-18": "deepseek-chat"
+    # 18:00-24:00: no override (use normal mapping)
+
+  # For complex tasks (complexity >= 5), always use complexity mapping regardless of time
+  complex_task_always_use_mapping: true
+
+# ─────────────────────────────────────────────────────────────────
+# MODEL CONFIGURATION
+# Sorted by cost (cheapest first)
+# ─────────────────────────────────────────────────────────────────
+models:
+  minimax-m2.7:
+    name: "MiniMax-M2.7"
+    provider: "minimax"
+    cost_per_1k_input: 0.0
+    cost_per_1k_output: 0.0
+    strengths: [coding, research, web, terminal, parallel_tasks]
+    weaknesses: [complex_reasoning, trading_decisions]
+    max_context: 8000
+    reasoning: false
+    free_tier: true
+    peak_hours_unreliable: true   # May have congestion 14:00-18:00 HKT
+
+  deepseek-chat:
+    name: "deepseek-chat"
+    provider: "deepseek"
+    cost_per_1k_input: 0.00015
+    cost_per_1k_output: 0.0006
+    strengths: [general, coding, cheap_fallback]
+    weaknesses: [deep_reasoning]
+    max_context: 64000
+    reasoning: false
+    free_tier: false
+    peak_hours_reliable: true     # Use as MiniMax fallback during peak
+
+  kimi-k2.5:
+    name: "kimi-k2.5"
+    provider: "kimi-coding"
+    cost_per_1k_input: 0.0003
+    cost_per_1k_output: 0.0012
+    strengths: [general, coding, analysis, compression]
+    weaknesses: [deep_reasoning]
+    max_context: 200000
+    reasoning: false
+    free_tier: false
+
+  kimi-k2.6:
+    name: "kimi-k2.6"
+    provider: "kimi-coding"
+    cost_per_1k_input: 0.0005
+    cost_per_1k_output: 0.0020
+    strengths: [general, coding, analysis, long_context]
+    weaknesses: [deep_reasoning]
+    max_context: 200000
+    reasoning: false
+    free_tier: false
+    fallback: "kimi-k2.5"            # kimi-k2.6 fail → kimi-k2.5
+    env_key: "KIMI_API_KEY"
+
+  grok-4-1-fast-reasoning:
+    name: "grok-4-1-fast-reasoning"
+    provider: "xai"
+    cost_per_1k_input: 0.0020
+    cost_per_1k_output: 0.0100
+    strengths: [complex_reasoning, trading_decisions, deep_analysis]
+    weaknesses: [cost, simple_tasks]
+    max_context: 10000
+    reasoning: true
+    free_tier: false
+    fallback: "kimi-k2.6"           # xai fail → kimi
+    env_key: "XAI_API_KEY"
+
+# ─────────────────────────────────────────────────────────────────
+# RETRY CONFIGURATION
+# ─────────────────────────────────────────────────────────────────
+retry:
+  max_retries: 2                    # Retry failed model before fallback
+  retry_delay_seconds: 3
+  fallback_chain_max_depth: 3       # Prevent infinite fallback loops
+
+# ─────────────────────────────────────────────────────────────────
+# HYBRID COMPLEXITY SCORING
+# Layer 1: rule-based (free, fast, ~80% coverage)
+# Layer 2: MiniMax model scoring (cheap, ~$0.00005, for boundary cases 3-7)
+# ─────────────────────────────────────────────────────────────────
+hybrid_scoring:
+  enabled: true
+
+  # Layer 1: rule-based fast path
+  rule_based:
+    # Obvious simple triggers (score 0-2, no model needed)
+    simple_triggers:
+      - "係嗎"
+      - "係唔嗎"
+      - "幾時"
+      - "幾多錢"
+      - "check"
+      - "status"
+      - "hello"
+      - "hi "
+      - "hey"
+      - "你好"
+      - "謝謝"
+      - "好"
+      - "ok"
+      - "yes"
+      - "no"
+      - "得"
+      - "唔得"
+      - "再見"
+      - "bye"
+    simple_score: 1.0
+
+    # Obvious complex triggers (score 8+, no model needed)
+    complex_triggers:
+      - "寫個程式"
+      - "寫code"
+      - "debug"
+      - "調試"
+      - "策略"
+      - "strategy"
+      - "trading plan"
+      - "分析下"
+      - "研究下"
+      - "寫個report"
+      - "generate report"
+      - "PDF"
+      - "cron job"
+      - "system design"
+      - "architecture"
+    complex_score: 8.0
+
+    # Length thresholds
+    short_max_chars: 80       # < 80 chars → simple
+    long_min_chars: 500       # > 500 chars → at least medium
+
+  # Layer 2: MiniMax boundary scoring
+  # When rule-based score is in boundary zone, call MiniMax for precise score
+  boundary:
+    enabled: true
+    min_score: 3.0            # If rule-based < 3, trust it (simple)
+    max_score: 7.0            # If rule-based > 7, trust it (complex)
+    # 3-7 zone → ask MiniMax to score
+    model: "minimax-m2.7"
+    max_tokens: 50            # "Score: X/10. Reason: ..."
+    estimated_cost_per_call: 0.00005
+
+# ─────────────────────────────────────────────────────────────────
+# DOMAIN OVERRIDES (bypass complexity mapping for specific topics)
+# ─────────────────────────────────────────────────────────────────
+domain_overrides:
+  # Stock/trading/investment tasks always route to grok regardless of
+  # complexity (unless budget critical forces cheapest model).
+  stock:
+    model: "grok-4-1-fast-reasoning"
+    provider: "xai"
+    keywords:
+      - "stock"
+      - "trading"
+      - "investment"
+      - "portfolio"
+      - "alpaca"
+      - "TSLA"
+      - "AAPL"
+      - "NVDA"
+      - "equity"
+      - "option"
+      - "margin"
+      - "order"
+      - "position"
+      - "strategy"
+      - "technical analysis"
+      - "chart"
+      - "indicator"
+      - "RSI"
+      - "MACD"
+      - "support"
+      - "resistance"
+      - "股票"
+      - "交易"
+      - "投資"
+      - "持倉"
+      - "下單"
+      - "策略"
+      - "波幅"
+      - "美股"
+      - "港股"
+      - "期權"
+      - "技術分析"
+      - "圖表"
+      - "指標"
+      - "貸款"
+      - "貸存"
+    fallback_model: "kimi-k2.6"
+    fallback_provider: "kimi-coding"
+
+# ─────────────────────────────────────────────────────────────────
+# COMPLEXITY SCORING (0-10 scale) — fallback when hybrid is disabled
+# ─────────────────────────────────────────────────────────────────
+complexity:
+  thresholds:
+    trivial: 1.0      # 0-1: Simple greetings, facts
+    low: 3.0          # 1-3: Basic tasks, short answers
+    medium: 5.0       # 3-5: Moderate reasoning, coding
+    high: 7.0         # 5-7: Complex analysis, multi-step
+    very_high: 9.0   # 7-9: Expert level, trading decisions
+    extreme: 10.0    # 9-10: Maximum complexity
+
+  # Model assignment by complexity (when budget is healthy, off-peak)
+  model_mapping:
+    trivial: "minimax-m2.7"
+    low: "minimax-m2.7"
+    medium: "kimi-k2.6"
+    high: "kimi-k2.6"
+    very_high: "grok-4-1-fast-reasoning"
+    extreme: "grok-4-1-fast-reasoning"
+
+  # Peak-hour model mapping (14:00-18:00 HKT, simple tasks only)
+  peak_model_mapping:
+    trivial: "deepseek-chat"
+    low: "deepseek-chat"
+    medium: "kimi-k2.6"
+    high: "kimi-k2.6"
+    very_high: "grok-4-1-fast-reasoning"
+    extreme: "grok-4-1-fast-reasoning"
+
+  # Delegation triggers
+  delegate_threshold: 3.0     # complexity >= 3.0 → consider delegate
+  force_delegate: 6.0         # complexity >= 6.0 → force delegate
+
+  # Subagent model (for delegated tasks)
+  subagent_model: "minimax-m2.7"
+  subagent_max_iterations: 50
+
+# ─────────────────────────────────────────────────────────────────
+# DELEGATION RULES
+# ─────────────────────────────────────────────────────────────────
+delegation:
+  # When to use delegate_task (parallel subagents)
+  triggers:
+    - complexity >= 6.0 and multiple_subtasks_detected
+    - complexity >= 8.0
+    - estimated_tokens > 8000
+    - requires_multiple_toolsets
+    - task_explicitly_requests_parallel
+
+  # When NOT to delegate (override)
+  no_delegate:
+    - budget_critical  # Today cost > $1.80
+    - simple_sequential_task
+    - user_prefers_direct
+    - peak_hours_simple_task  # Don't delegate simple tasks during peak (waste)
+
+  # Max parallel subagents
+  max_concurrent_children: 3
+
+# ─────────────────────────────────────────────────────────────────
+# TOKEN ESTIMATION
+# ─────────────────────────────────────────────────────────────────
+token_estimation:
+  # Rough heuristic: chars / 4 ≈ tokens for English/CJK mixed
+  chars_per_token: 3.5
+  # Safety margin
+  margin_multiplier: 1.2
+
+# ─────────────────────────────────────────────────────────────────
+# DATABASE
+# ─────────────────────────────────────────────────────────────────
+database:
+  path: ".hermes/data/central_metrics.db"
+  table: "metrics_log"
+  query_timeout: 5.0
+  cache_ttl: 30  # seconds
+
+# ─────────────────────────────────────────────────────────────────
+# LOGGING
+# ─────────────────────────────────────────────────────────────────
+logging:
+  level: "INFO"
+  log_decisions: true  # Log every routing decision to stdout
