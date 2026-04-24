@@ -1,143 +1,159 @@
 # Hermes Decision Engine
 
-> ⚠️ **AUTO ROUTING DISABLED (2026-04-23)** — Data collection/monitoring only. All model selection is now manual. Cost data still tracked.
+AI model cost-aware routing system for Hermes Agent. Monitors daily spending and routes tasks to appropriate models based on complexity and budget.
 
-A cost-aware model routing system for [Hermes Agent](https://github.com/nousresearch/hermes-agent). Scores prompt complexity, monitors daily budget spend, and routes tasks to the optimal model — or logs decisions for manual review.
+**⚠️ STATUS: Auto routing DISABLED (2026-04-23)** — Now data collection/monitoring only. All model selection is manual.
 
 ## Features
 
-- **Hybrid Complexity Scoring** — Rule-based (free) + MiniMax heuristic for boundary cases
-- **Live Budget Tracking** — Queries `central_metrics.db` for real-time cost visibility
-- **Time-of-Day Routing** — Avoids MiniMax peak congestion (14:00–18:00 HKT)
-- **Domain Overrides** — Stock/trading tasks route to grok by keyword detection
-- **Model Fallback Chain** — Automatic failover when providers are unavailable
-- **SKILL.md Frontmatter Injection** — Live state carried in skill YAML for zero-cost context loading
-
-## Architecture
-
-```
-User Prompt → ComplexityScorer (0-10) + MetricsAPI ($ today)
-                    ↓
-         DecisionRouter → (model, delegate?, reasoning)
-                    ↓
-              Execute with chosen strategy
-```
+- **Cost Tracking**: Real-time monitoring of daily token usage per model
+- **Complexity Scoring**: Hybrid 0-10 scale (rule-based + heuristic)
+- **Model Fallback Chains**: Automatic failover when providers fail
+- **Peak Hour Routing**: Avoids MiniMax congestion during 14:00-18:00 HKT
+- **Domain Overrides**: Stock/trading tasks route to grok by preference
+- **SKILL.md Integration**: Live budget state injected into skill frontmatter
 
 ## Installation
 
-### 1. Copy scripts to your Hermes scripts directory
+### 1. Clone or Copy to Your Hermes Workspace
 
 ```bash
-mkdir -p ~/.hermes/scripts/decision_engine
-cp -r scripts/* ~/.hermes/scripts/decision_engine/
-```
-
-### 2. Copy config
-
-```bash
+# Copy scripts to your Hermes scripts directory
+cp -r scripts ~/.hermes/scripts/decision_engine
 cp config/rules.yaml ~/.hermes/scripts/decision_engine/rules.yaml
+
+# Copy skill
+cp SKILL.md ~/.hermes/skills/decision-engine/SKILL.md
 ```
 
-### 3. Set up hourly budget cron
+### 2. Set Up Database Path
 
-```bash
-# Edit crontab
-crontab -e
+Ensure `~/.hermes/data/central_metrics.db` exists (created by Hermes metrics collection).
 
-# Add this line:
+### 3. Configure Cron Job
+
+Add to crontab — updates budget status every hour:
+```
 0 * * * * /usr/bin/python3 ~/.hermes/scripts/decision_engine/update_budget_status.py
 ```
 
-### 4. Verify installation
+### 4. Install Dependencies
+
+```bash
+pip install pyyaml
+```
+
+## Configuration
+
+Edit `config/rules.yaml` to customize:
+
+- **Cost thresholds**: `cost_budget.daily_limit`, `warning_threshold`, `critical_threshold`
+- **Peak hours**: `time_of_day.peak_hours.start` / `.end`
+- **Model mapping**: `complexity.model_mapping`
+- **Domain overrides**: `domain_overrides.stock.keywords`
+
+## Usage
+
+### Check Budget Status
 
 ```bash
 python3 ~/.hermes/scripts/decision_engine/enable_for_session.py
 ```
 
-You should see current budget status and example routing decisions.
-
-## Configuration
-
-Edit `~/.hermes/scripts/decision_engine/rules.yaml` to tune:
-
-| Section | What to adjust |
-|---------|----------------|
-| `cost_budget.daily_limit` | Daily USD budget before forcing cheapest model |
-| `cost_budget.critical_threshold` | Hard cap — all paid models blocked above this |
-| `time_of_day.peak_hours` | HKT hours when MiniMax is unreliable |
-| `domain_overrides` | Keywords that force specific models |
-| `complexity.delegate_threshold` | Complexity score that triggers subagent delegation |
-| `hybrid_scoring.boundary` | When to call MiniMax for precise scoring |
-
-## Usage
-
-### In your skill or agent prompt
-
-Load the skill to get live budget state injected via YAML frontmatter:
-
-```
-/skill decision-engine
-```
-
-### Programmatic usage
+### Programmatic Usage
 
 ```python
 import sys
 sys.path.insert(0, '~/.hermes/scripts/decision_engine')
 
 from decision_router import DecisionRouter
+from metrics_api import MetricsAPI
 
+# Get current budget
+api = MetricsAPI()
+budget = api.get_budget_status()
+print(f"Today: ${budget.today_cost:.2f} / ${budget.budget_limit:.2f}")
+
+# Route a task
 router = DecisionRouter()
-decision = router.decide("Analyze TSLA earnings report and suggest a trading strategy")
+decision = router.decide("Analyze Tesla stock and create a trading plan")
 
 print(f"Model: {decision.model}")
 print(f"Delegate: {decision.should_delegate}")
-print(f"Reasoning: {decision.reasoning}")
-print(f"Today's spend: ${decision.budget_status.today_cost:.2f}")
+for reason in decision.reasoning:
+    print(f"  - {reason}")
 ```
 
-### CLI one-shot status
+### Peak Hour Monitoring
 
 ```bash
-python3 ~/.hermes/scripts/decision_engine/enable_for_session.py
+# Run latency test
+python3 ~/.hermes/scripts/decision_engine/minimax_peak_monitor.py
+
+# View last 7 days summary
+python3 ~/.hermes/scripts/decision_engine/minimax_peak_monitor.py --summary
 ```
 
-## Files
+## File Structure
 
-| File | Purpose |
-|------|---------|
-| `scripts/decision_router.py` | Core routing logic |
-| `scripts/complexity_scorer.py` | Hybrid complexity scoring |
-| `scripts/metrics_api.py` | Central metrics DB query |
-| `scripts/minimax_peak_monitor.py` | Latency monitoring during peak hours |
-| `scripts/update_budget_status.py` | Cron job — updates status cache + SKILL frontmatter |
-| `scripts/enable_for_session.py` | CLI status output |
-| `scripts/rules.yaml` | All tunable thresholds and model configs |
-| `config/rules.yaml` | Same rules.yaml (Git-safe copy) |
+```
+hermes-decision-engine/
+├── SKILL.md              # Hermes skill with live budget in frontmatter
+├── README.md             # This file
+├── scripts/
+│   ├── decision_router.py      # Core routing logic
+│   ├── complexity_scorer.py    # 0-10 complexity scoring
+│   ├── metrics_api.py          # DB cost queries
+│   ├── rules.yaml              # Tunable config
+│   ├── enable_for_session.py   # One-shot status
+│   ├── update_budget_status.py # Cron updater
+│   ├── minimax_peak_monitor.py # Congestion monitor
+│   └── __init__.py
+└── config/
+    └── rules.yaml        # Alias for scripts/rules.yaml
+```
+
+## Routing Logic
+
+1. **Check budget status** → CRITICAL/WARNING/HEALTHY
+2. **Score prompt complexity** → 0-10 scale
+3. **Apply domain override** if stock/trading keywords detected
+4. **Apply time-of-day override** during peak hours (14:00-18:00 HKT)
+5. **Map complexity to model** using `complexity.model_mapping`
+6. **Check fallback chain** if primary model unavailable
+7. **Decide delegation** based on complexity threshold
 
 ## Model Fallback Chain
 
 ```
 grok-4-1-fast-reasoning → kimi-k2.6 → kimi-k2.5 → minimax-m2.7
 kimi-k2.6               → kimi-k2.5 → minimax-m2.7
-deepseek-chat           → minimax-m2.7
-minimax-m2.7            → (no fallback — ultimate safety net)
+kimi-k2.5               → minimax-m2.7
+deepseek-chat            → minimax-m2.7
+minimax-m2.7            → (end of chain)
 ```
 
-## Budget States
+## Cost Thresholds (USD/day)
 
-| State | Threshold | Behavior |
-|-------|-----------|----------|
-| HEALTHY | < $1.50/day | Normal routing rules apply |
-| WARNING | ≥ $1.50/day | Downgrade one tier |
-| CRITICAL | ≥ $1.80/day | Force MiniMax only, disable delegation |
+| Status | Threshold | Action |
+|--------|-----------|--------|
+| HEALTHY | < $1.50 | Normal routing |
+| WARNING | ≥ $1.50 | Downgrade 1 tier |
+| CRITICAL | ≥ $1.80 | Force MiniMax, disable delegation |
 
-## Limitations
+## Troubleshooting
 
-- **Auto routing is disabled.** The system collects cost data but does not automatically select models. You control all routing manually.
-- Cron jobs use **static model binding** — they do not adapt to budget state.
-- Budget status is cached ~1 hour. Rapid spending spikes may not be reflected immediately.
-- Complexity scoring is heuristic — tune `rules.yaml` for your domain.
+### "No LLM provider configured"
+- Check provider credentials in `.env`
+- Verify fallback chain models have valid credentials
+
+### Budget status not updating
+- Check cron job: `cronjob list`
+- Verify script path: `~/.hermes/scripts/decision_engine/update_budget_status.py`
+
+### High latency during peak hours
+- Run peak monitor: `python3 ~/.hermes/scripts/decision_engine/minimax_peak_monitor.py`
+- Consider adding deepseek-chat as MiniMax fallback
 
 ## License
 
