@@ -22,12 +22,19 @@ def main():
     addon = router.get_system_prompt_addon()
 
     # 1. Update budget status markdown cache
-    output_path = Path.home() / ".hermes" / "data" / "budget_status.md"
+    # Try script-local data dir first, fall back to Hermes default
+    local_data = Path(__file__).parent.parent.parent / "data"
+    hermes_data = Path.home() / ".hermes" / "data"
+    output_dir = local_data if local_data.exists() else hermes_data
+    output_path = output_dir / "budget_status.md"
     output_path.write_text(addon, encoding="utf-8")
     print(f"Updated: {output_path}")
 
     # 2. Sync into SKILL.md frontmatter so skill auto-loads with live data
-    skill_path = Path.home() / ".hermes" / "skills" / "decision-engine" / "SKILL.md"
+    # Try script-local skill dir first, fall back to Hermes default
+    local_skill = Path(__file__).parent.parent.parent / "skills" / "decision-engine" / "SKILL.md"
+    hermes_skill = Path.home() / ".hermes" / "skills" / "decision-engine" / "SKILL.md"
+    skill_path = local_skill if local_skill.exists() else hermes_skill
     if skill_path.exists():
         _sync_skill_frontmatter(skill_path, router)
         print(f"Updated: {skill_path}")

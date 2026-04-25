@@ -30,8 +30,8 @@ CONSECUTIVE_FAST_TO_CLEAR = 3  # Need 3 fast readings to clear peak
 MAX_RETRIES = 2
 TEST_PROMPT = "Hi"       # Minimal prompt for speed test
 
-STATUS_FILE = Path.home() / ".hermes" / "data" / "minimax_peak_status.json"
-LOG_FILE = Path.home() / ".hermes" / "data" / "minimax_peak_log.jsonl"
+STATUS_FILE = Path(__file__).parent.parent / "data" / "minimax_peak_status.json"
+LOG_FILE = Path(__file__).parent.parent / "data" / "minimax_peak_log.jsonl"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -181,7 +181,7 @@ def evaluate_peak_status(result: dict, current_status: dict) -> dict:
 
 def maybe_adjust_rules(status: dict) -> str:
     """If peak is cleared for the day, optionally notify or adjust."""
-    rules_path = Path.home() / ".hermes" / "scripts" / "decision_engine" / "rules.yaml"
+    rules_path = Path(__file__).parent.parent / "config" / "rules.yaml"
 
     if not status.get("peak_active", True) and status.get("peak_cleared_at"):
         # Peak was just cleared
@@ -199,7 +199,7 @@ def auto_adjust_rules(status: dict) -> str:
     Does NOT auto-modify rules.yaml — human approval required.
     """
     CONSECUTIVE_DAYS = 3
-    rules_path = Path.home() / ".hermes" / "scripts" / "decision_engine" / "rules.yaml"
+    rules_path = Path(__file__).parent.parent / "config" / "rules.yaml"
 
     if status.get("recommendation_generated_at"):
         return ""

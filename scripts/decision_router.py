@@ -91,7 +91,7 @@ class DecisionRouter:
         complexity_scorer: Optional[ComplexityScorer] = None,
     ):
         self.config_path = config_path or (
-            Path.home() / ".hermes" / "scripts" / "decision_engine" / "rules.yaml"
+            Path(__file__).parent / "rules.yaml"
         )
         self.config = self._load_config()
         self.metrics = metrics_api or MetricsAPI()

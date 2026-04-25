@@ -155,7 +155,7 @@ class ComplexityScorer:
 
     def __init__(self, config_path: Optional[Path] = None, weights: Optional[Dict[str, float]] = None):
         self.config_path = config_path or (
-            Path.home() / ".hermes" / "scripts" / "decision_engine" / "rules.yaml"
+            Path(__file__).parent / "rules.yaml"
         )
         self._config = self._load_config()
         self.weights = weights or self._load_weights()

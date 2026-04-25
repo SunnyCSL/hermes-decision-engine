@@ -85,7 +85,12 @@ class MetricsAPI:
         
         home = Path.home()
         self.db_path = db_path or (home / ".hermes" / "data" / "central_metrics.db")
-        self.config_path = config_path or (home / ".hermes" / "scripts" / "decision_engine" / "rules.yaml")
+        # Try script-local config first (package install), fall back to Hermes default
+        self.config_path = config_path or (
+            Path(__file__).parent / "rules.yaml"
+            if (Path(__file__).parent / "rules.yaml").exists()
+            else home / ".hermes" / "scripts" / "decision_engine" / "rules.yaml"
+        )
         
         self._config = self._load_config()
         self._local = threading.local()
